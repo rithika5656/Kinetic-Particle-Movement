@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kinetic Particle Swarm (Debug)</title>
+    <title>Kinetic Particle Swarm (Elaborate)</title>
     <style>
         body {
             margin: 0;
@@ -25,7 +25,7 @@
             background: rgba(0, 0, 0, 0.8);
             padding: 10px;
             display: none;
-            z-index: 1000;
+            pointer-events: none;
         }
     </style>
     <!-- Import Map for Three.js -->
@@ -41,7 +41,6 @@
 
 <body>
     <div id="error-log"></div>
-
     <script>
         window.onerror = function (msg, url, line) {
             const div = document.getElementById('error-log');
@@ -55,21 +54,22 @@
         import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
         import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
         import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-        import { OrbitControls } from 'three/addons/controls/OrbitControls.js'; // Added back for safety
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
         // --- Configuration ---
-        const PARTICLE_COUNT = 15000;
-        const MAX_SPEED = 3.5;
-        const MAX_FORCE = 0.08;
-        const DAMPING = 0.97;
+        const PARTICLE_COUNT = 20000; // Increased count
+        const MAX_SPEED = 4.5;        // Faster
+        const MAX_FORCE = 0.15;       // Stronger turns
+        const DAMPING = 0.98;         // Less friction = larger trails
+        const SWIRL_STRENGTH = 0.05;  // New Vortex force
 
         // --- Setup Scene ---
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x050508);
-        scene.fog = new THREE.FogExp2(0x050508, 0.0035);
+        scene.background = new THREE.Color(0x020205); // Slightly darker
+        scene.fog = new THREE.FogExp2(0x020205, 0.002);
 
-        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
-        camera.position.set(0, 0, 160);
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 4000);
+        camera.position.set(0, 50, 250); // Further back to see the scale
 
         const renderer = new THREE.WebGLRenderer({
             powerPreference: "high-performance",
@@ -83,31 +83,31 @@
         const renderScene = new RenderPass(scene, camera);
 
         const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
-        bloomPass.threshold = 0.2;
-        bloomPass.strength = 1.2;
-        bloomPass.radius = 0.5;
+        bloomPass.threshold = 0.1;
+        bloomPass.strength = 1.0;
+        bloomPass.radius = 0.6;
 
         const composer = new EffectComposer(renderer);
         composer.addPass(renderScene);
         composer.addPass(bloomPass);
 
-        // --- Controls (Fallback) ---
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
-        controls.enabled = true; // User can manually move if stuck
+        controls.enabled = true;
 
         // --- Physics Arrays ---
         const positions = new Float32Array(PARTICLE_COUNT * 3);
         const velocities = new Float32Array(PARTICLE_COUNT * 3);
         const colors = new Float32Array(PARTICLE_COUNT * 3);
 
-        // --- Initialization ---
+        // --- Initialization (Big Cloud) ---
         const geometry = new THREE.BufferGeometry();
 
         for (let i = 0; i < PARTICLE_COUNT; i++) {
             const i3 = i * 3;
 
-            const r = 120 * Math.cbrt(Math.random());
+            // Random distribution in a large sphere
+            const r = 200 * Math.cbrt(Math.random());
             const theta = Math.random() * 2 * Math.PI;
             const phi = Math.acos(2 * Math.random() - 1);
 
@@ -115,21 +115,21 @@
             positions[i3 + 1] = r * Math.sin(phi) * Math.sin(theta);
             positions[i3 + 2] = r * Math.cos(phi);
 
-            velocities[i3] = (Math.random() - 0.5) * 0.5;
-            velocities[i3 + 1] = (Math.random() - 0.5) * 0.5;
-            velocities[i3 + 2] = (Math.random() - 0.5) * 0.5;
+            velocities[i3] = (Math.random() - 0.5) * 1.0;
+            velocities[i3 + 1] = (Math.random() - 0.5) * 1.0;
+            velocities[i3 + 2] = (Math.random() - 0.5) * 1.0;
         }
 
         geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
         geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
         const material = new THREE.PointsMaterial({
-            size: 0.5,
+            size: 0.8, // Bigger particles
             vertexColors: true,
             blending: THREE.AdditiveBlending,
             depthWrite: false,
             transparent: true,
-            opacity: 0.6
+            opacity: 0.5
         });
 
         const particleSystem = new THREE.Points(geometry, material);
@@ -138,10 +138,10 @@
 
         // --- Interaction ---
         const raycaster = new THREE.Raycaster();
-        const mouse2D = new THREE.Vector2(0, 0); // Start AT CENTER to prevent camera from flying away
+        const mouse2D = new THREE.Vector2(0, 0);
         const targetPos = new THREE.Vector3(0, 0, 0);
         const plane = new THREE.Mesh(
-            new THREE.PlaneGeometry(800, 800),
+            new THREE.PlaneGeometry(2000, 2000),
             new THREE.MeshBasicMaterial({ visible: false })
         );
         scene.add(plane);
@@ -171,7 +171,7 @@
             const posAttr = geometry.attributes.position;
             const colAttr = geometry.attributes.color;
 
-            smoothedTarget.lerp(targetPos, 0.1);
+            smoothedTarget.lerp(targetPos, 0.08); // Slower smoothing for "tow" feel
 
             for (let i = 0; i < PARTICLE_COUNT; i++) {
                 const i3 = i * 3;
@@ -190,10 +190,28 @@
                 const distSq = dx * dx + dy * dy + dz * dz;
                 const dist = Math.sqrt(distSq);
 
-                let desiredX = (dx / (dist + 0.01)) * MAX_SPEED; // +0.01 to avoid div0
-                let desiredY = (dy / (dist + 0.01)) * MAX_SPEED;
-                let desiredZ = (dz / (dist + 0.01)) * MAX_SPEED;
+                // --- 1. Seek / Attract ---
+                let desiredX = (dx / (dist + 0.1)) * MAX_SPEED;
+                let desiredY = (dy / (dist + 0.1)) * MAX_SPEED;
+                let desiredZ = (dz / (dist + 0.1)) * MAX_SPEED;
 
+                // --- 2. Vortex Force (The "Elaborate" swirl) ---
+                // Cross product with UP vector (0,1,0) roughly
+                // Or just tangent to the radius
+                const vortexX = -dz;  // Z -> X
+                const vortexY = 0;    // 
+                const vortexZ = dx;   // X -> Z
+
+                // Mix Seek with Vortex based on distance
+                // Far away = Seek directly
+                // Close = Swirl
+                let swirlFactor = 0;
+                if (dist < 100) swirlFactor = 1.0 - (dist / 100.0);
+
+                desiredX += vortexX * SWIRL_STRENGTH * swirlFactor;
+                desiredZ += vortexZ * SWIRL_STRENGTH * swirlFactor;
+
+                // --- 3. Steering ---
                 let steerX = desiredX - vx;
                 let steerY = desiredY - vy;
                 let steerZ = desiredZ - vz;
@@ -210,14 +228,16 @@
                 vy += steerY;
                 vz += steerZ;
 
+                // Damping
                 vx *= DAMPING;
                 vy *= DAMPING;
                 vz *= DAMPING;
 
-                // Noise
-                vx += (Math.random() - 0.5) * 0.05;
-                vy += (Math.random() - 0.5) * 0.05;
-                vz += (Math.random() - 0.5) * 0.05;
+                // --- 4. Complexity Noise ---
+                // Perlin-ish noise to make trails "wiggle"
+                vx += (Math.random() - 0.5) * 0.15;
+                vy += (Math.random() - 0.5) * 0.15;
+                vz += (Math.random() - 0.5) * 0.15;
 
                 positions[i3] = px + vx;
                 positions[i3 + 1] = py + vy;
@@ -227,12 +247,14 @@
                 velocities[i3 + 1] = vy;
                 velocities[i3 + 2] = vz;
 
+                // Color Speed
                 const speedSq = vx * vx + vy * vy + vz * vz;
-                const speedFactor = Math.min(speedSq * 0.1, 1.0);
+                const speedFactor = Math.min(speedSq * 0.08, 1.0);
 
-                colAttr.array[i3] = 0.1 + speedFactor * 0.8;
-                colAttr.array[i3 + 1] = 0.3 + speedFactor * 0.6;
-                colAttr.array[i3 + 2] = 0.7 + speedFactor * 0.3;
+                // Palette: Electric Purple -> Cyan -> White
+                colAttr.array[i3] = 0.2 + speedFactor * 0.8;
+                colAttr.array[i3 + 1] = 0.0 + speedFactor * 0.9;
+                colAttr.array[i3 + 2] = 0.5 + speedFactor * 0.5;
             }
 
             posAttr.needsUpdate = true;
@@ -243,7 +265,10 @@
             requestAnimationFrame(animate);
             updatePhysics();
 
-            controls.update(); // Use OrbitControls for stability
+            // Slow orbit
+            // scene.rotation.y += 0.002;
+
+            controls.update();
 
             composer.render();
         }
