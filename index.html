@@ -4,105 +4,31 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kinetic Particle Wave</title>
-    <!-- Modern Font -->
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700&display=swap" rel="stylesheet">
+    <title>Kinetic Particle Swarm</title>
     <style>
         body {
             margin: 0;
             overflow: hidden;
-            background-color: #020205;
-            font-family: 'Outfit', sans-serif;
+            background-color: #010103;
+            font-family: sans-serif;
         }
 
         canvas {
             display: block;
         }
 
-        /* Glassmorphism UI Panel */
-        #ui-panel {
+        /* Hidden instruction for first interact */
+        #hint {
             position: absolute;
-            top: 24px;
-            left: 24px;
-            width: 280px;
-            padding: 24px;
-            background: rgba(20, 20, 30, 0.4);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 16px;
-            color: #fff;
-            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
-            z-index: 100;
-            transition: opacity 0.3s ease;
-        }
-
-        h1 {
-            margin: 0 0 8px 0;
-            font-size: 18px;
-            font-weight: 700;
-            letter-spacing: 1px;
-            background: linear-gradient(90deg, #fff, #a2d2ff);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-
-        p {
-            margin: 0 0 24px 0;
+            bottom: 30px;
+            width: 100%;
+            text-align: center;
+            color: rgba(255, 255, 255, 0.3);
+            pointer-events: none;
             font-size: 12px;
-            color: rgba(255, 255, 255, 0.5);
-            line-height: 1.4;
-        }
-
-        .control-group {
-            margin-bottom: 16px;
-        }
-
-        .label-row {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 8px;
-            font-size: 11px;
-            font-weight: 500;
-            color: rgba(255, 255, 255, 0.8);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        /* Custom Range Slider */
-        input[type=range] {
-            -webkit-appearance: none;
-            width: 100%;
-            background: transparent;
-        }
-
-        input[type=range]:focus {
-            outline: none;
-        }
-
-        input[type=range]::-webkit-slider-runnable-track {
-            width: 100%;
-            height: 4px;
-            cursor: pointer;
-            background: rgba(255, 255, 255, 0.15);
-            border-radius: 2px;
-        }
-
-        input[type=range]::-webkit-slider-thumb {
-            height: 14px;
-            width: 14px;
-            border-radius: 50%;
-            background: #4cc9f0;
-            cursor: pointer;
-            -webkit-appearance: none;
-            margin-top: -5px;
-            box-shadow: 0 0 10px rgba(76, 201, 240, 0.5);
-            transition: transform 0.1s;
-        }
-
-        input[type=range]::-webkit-slider-thumb:hover {
-            transform: scale(1.2);
-            background: #fff;
+            letter-spacing: 2px;
+            opacity: 1;
+            transition: opacity 2s;
         }
     </style>
     <!-- Import Map for Three.js -->
@@ -117,254 +43,121 @@
 </head>
 
 <body>
-
-    <div id="ui-panel">
-        <h1>KINETIC WAVE</h1>
-        <p>Classic Ocean Mode. Mouse height controls energy.</p>
-
-        <div class="control-group">
-            <div class="label-row">
-                <span>Wave Speed</span>
-                <span id="val-speed">1.0</span>
-            </div>
-            <input type="range" id="input-speed" min="0" max="3" step="0.1" value="1.0">
-        </div>
-
-        <div class="control-group">
-            <div class="label-row">
-                <span>Base Height</span>
-                <span id="val-height">1.0</span>
-            </div>
-            <input type="range" id="input-height" min="0" max="3" step="0.1" value="1.0">
-        </div>
-
-        <div class="control-group">
-            <div class="label-row">
-                <span>Glow Intensity</span>
-                <span id="val-bloom">1.5</span>
-            </div>
-            <input type="range" id="input-bloom" min="0" max="3" step="0.1" value="1.5">
-        </div>
-    </div>
+    <div id="hint">MOVE CURSOR TO ATTRACT</div>
 
     <script type="module">
         import * as THREE from 'three';
-        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
         import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
         import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
         import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 
         // --- Configuration ---
-        const cfg = {
-            speed: 1.0,
-            heightScale: 1.0,
-            bloomStrength: 1.5
-        };
-
-        const PARTICLE_COUNT_X = 200;
-        const PARTICLE_COUNT_Z = 200;
-        const SEPARATION = 1.0;
+        const PARTICLE_COUNT = 15000;
+        const ATTRACTION_FORCE = 0.8;
+        const DAMPING = 0.96;
+        const MAX_SPEED = 4.0;
 
         // --- Setup Scene ---
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x020205);
-        scene.fog = new THREE.FogExp2(0x020205, 0.002);
+        scene.background = new THREE.Color(0x010103);
+        scene.fog = new THREE.FogExp2(0x010103, 0.003);
 
-        const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 2000);
-        camera.position.set(0, 70, 120);
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
+        camera.position.set(0, 0, 150);
 
-        const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance", stencil: false, depth: false });
+        const renderer = new THREE.WebGLRenderer({
+            powerPreference: "high-performance",
+            antialias: false
+        });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-        renderer.toneMapping = THREE.ReinhardToneMapping;
         document.body.appendChild(renderer.domElement);
 
-        const controls = new OrbitControls(camera, renderer.domElement);
-        controls.enableDamping = true;
-        controls.autoRotate = true;
-        controls.autoRotateSpeed = 0.5;
-        controls.maxDistance = 400;
-        controls.minDistance = 20;
-
-        // --- Post Processing ---
+        // --- Post Processing (Bloom) ---
         const renderScene = new RenderPass(scene, camera);
-
         const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
         bloomPass.threshold = 0.0;
-        bloomPass.strength = cfg.bloomStrength;
-        bloomPass.radius = 0.5;
+        bloomPass.strength = 1.5;
+        bloomPass.radius = 0.8;
 
         const composer = new EffectComposer(renderer);
         composer.addPass(renderScene);
         composer.addPass(bloomPass);
 
-        // --- Starfield Background ---
-        const starGeometry = new THREE.BufferGeometry();
-        const starCount = 4000;
-        const starPos = new Float32Array(starCount * 3);
-        const starSizes = new Float32Array(starCount);
-        for (let i = 0; i < starCount * 3; i++) {
-            starPos[i] = (Math.random() - 0.5) * 800;
-            if (i % 3 === 0) starSizes[i / 3] = Math.random();
-        }
-        starGeometry.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
-        starGeometry.setAttribute('size', new THREE.BufferAttribute(starSizes, 1));
+        // --- Physics State ---
+        // Storing physics data in typed arrays for CPU performance
+        const positions = new Float32Array(PARTICLE_COUNT * 3);
+        const velocities = new Float32Array(PARTICLE_COUNT * 3);
+        const accelerations = new Float32Array(PARTICLE_COUNT * 3);
+        const colors = new Float32Array(PARTICLE_COUNT * 3);
 
-        const starMaterial = new THREE.PointsMaterial({
-            color: 0xffffff,
-            size: 0.8,
-            transparent: true,
-            opacity: 0.6,
-            sizeAttenuation: true
-        });
-        const stars = new THREE.Points(starGeometry, starMaterial);
-        scene.add(stars);
+        // --- Initialization ---
+        const geometry = new THREE.BufferGeometry();
 
+        for (let i = 0; i < PARTICLE_COUNT; i++) {
+            const i3 = i * 3;
 
-        // --- Kinetic Wave Particles ---
-        const particlesGeometry = new THREE.BufferGeometry();
-        const count = PARTICLE_COUNT_X * PARTICLE_COUNT_Z;
+            // Random distribution in a large sphere
+            const r = 100 * Math.cbrt(Math.random());
+            const theta = Math.random() * 2 * Math.PI;
+            const phi = Math.acos(2 * Math.random() - 1);
 
-        const positions = new Float32Array(count * 3);
-        const scales = new Float32Array(count);
-        const offsets = new Float32Array(count);
+            positions[i3] = r * Math.sin(phi) * Math.cos(theta);
+            positions[i3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+            positions[i3 + 2] = r * Math.cos(phi);
 
-        let i = 0;
-        for (let ix = 0; ix < PARTICLE_COUNT_X; ix++) {
-            for (let iz = 0; iz < PARTICLE_COUNT_Z; iz++) {
+            velocities[i3] = (Math.random() - 0.5) * 0.2;
+            velocities[i3 + 1] = (Math.random() - 0.5) * 0.2;
+            velocities[i3 + 2] = (Math.random() - 0.5) * 0.2;
 
-                const x = (ix - PARTICLE_COUNT_X / 2) * SEPARATION;
-                const z = (iz - PARTICLE_COUNT_Z / 2) * SEPARATION;
-                const y = 0;
-
-                positions[i * 3] = x;
-                positions[i * 3 + 1] = y;
-                positions[i * 3 + 2] = z;
-
-                scales[i] = 1;
-                offsets[i] = Math.random() * Math.PI * 2;
-
-                i++;
-            }
+            // Initial Color (Cyan/Blue base)
+            colors[i3] = 0.0;
+            colors[i3 + 1] = 0.5;
+            colors[i3 + 2] = 1.0;
         }
 
-        particlesGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        particlesGeometry.setAttribute('scale', new THREE.BufferAttribute(scales, 1));
-        particlesGeometry.setAttribute('aOffset', new THREE.BufferAttribute(offsets, 1));
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
-        // Vertex Shader - REVERTED TO CLASSIC WAVE
-        const vertexShader = `
-            uniform float uTime;
-            uniform float uIntensity; // Global Intensity (Mouse Y)
-            uniform float uHeightScale;
-            
-            attribute float aOffset;
-            attribute float scale;
-
-            varying vec3 vColor;
-
-            void main() {
-                vec3 newPosition = position;
-
-                float dist = distance(newPosition.xz, vec2(0.0));
-                
-                // --- Classic Complex Wave Function ---
-                // Primary Sine
-                float y = sin(newPosition.x * 0.1 + uTime * 1.5 + aOffset) * 2.0; 
-                // Secondary Cosine crossing
-                y += cos(newPosition.z * 0.08 + uTime * 1.2) * 2.0;
-                // Ripple from center
-                y += sin(dist * 0.15 - uTime * 2.0) * 3.0;
-
-                // Modifiers
-                y *= uHeightScale;
-                // Global Interaction: Mouse boosts the entire wave height
-                y *= (1.0 + uIntensity * 2.0); 
-
-                newPosition.y = y;
-
-                vec4 mvPosition = modelViewMatrix * vec4( newPosition, 1.0 );
-                gl_Position = projectionMatrix * mvPosition;
-
-                // Size attenuation
-                gl_PointSize = scale * ( 250.0 / - mvPosition.z );
-                
-                // --- Coloring ---
-                float heightFactor = smoothstep(-10.0, 15.0, y);
-                
-                vec3 colorDeep = vec3(0.02, 0.02, 0.1);    // Void Purple
-                vec3 colorMid  = vec3(0.0, 0.5, 0.8);      // Electric Blue
-                vec3 colorHigh = vec3(0.0, 1.0, 0.9);      // Cyan
-                vec3 colorPeak = vec3(0.8, 0.1, 0.6);      // Magenta Hot
-
-                vec3 finalColor = mix(colorDeep, colorMid, smoothstep(0.0, 0.4, heightFactor));
-                finalColor = mix(finalColor, colorHigh, smoothstep(0.4, 0.7, heightFactor));
-                finalColor = mix(finalColor, colorPeak, smoothstep(0.8, 1.0, heightFactor));
-                
-                // Brighten on high intensity
-                finalColor += vec3(uIntensity * 0.3);
-
-                vColor = finalColor;
-            }
-        `;
-
-        // Fragment Shader
-        const fragmentShader = `
-            varying vec3 vColor;
-            
-            void main() {
-                float r = distance( gl_PointCoord, vec2(0.5));
-                if ( r > 0.5 ) discard;
-
-                float alpha = 1.0;
-                if(r > 0.3) alpha = 1.0 - smoothstep(0.3, 0.5, r);
-
-                gl_FragColor = vec4( vColor, alpha );
-            }
-        `;
-
-        const particlesMaterial = new THREE.ShaderMaterial({
-            uniforms: {
-                uTime: { value: 0 },
-                uIntensity: { value: 0 },
-                uHeightScale: { value: 1.0 }
-            },
-            vertexShader: vertexShader,
-            fragmentShader: fragmentShader,
-            transparent: true,
+        const material = new THREE.PointsMaterial({
+            size: 0.6,
+            vertexColors: true,
+            blending: THREE.AdditiveBlending,
             depthWrite: false,
-            blending: THREE.AdditiveBlending
+            transparent: true,
+            opacity: 0.8
         });
 
-        const particleSystem = new THREE.Points(particlesGeometry, particlesMaterial);
+        const particleSystem = new THREE.Points(geometry, material);
         scene.add(particleSystem);
 
-        // UI Binding
-        const uiSpeed = document.getElementById('input-speed');
-        const uiHeight = document.getElementById('input-height');
-        const uiBloom = document.getElementById('input-bloom');
 
-        uiSpeed.addEventListener('input', (e) => {
-            cfg.speed = parseFloat(e.target.value);
-            document.getElementById('val-speed').innerText = cfg.speed.toFixed(1);
-        });
-        uiHeight.addEventListener('input', (e) => {
-            cfg.heightScale = parseFloat(e.target.value);
-            document.getElementById('val-height').innerText = cfg.heightScale.toFixed(1);
-        });
-        uiBloom.addEventListener('input', (e) => {
-            cfg.bloomStrength = parseFloat(e.target.value);
-            bloomPass.strength = cfg.bloomStrength;
-            document.getElementById('val-bloom').innerText = cfg.bloomStrength.toFixed(1);
-        });
+        // --- Interaction ---
+        const raycaster = new THREE.Raycaster();
+        const mouse2D = new THREE.Vector2(999, 999); // Start off screen
+        const targetPos = new THREE.Vector3(0, 0, 0);
 
+        // Invisible plane for 3D mouse tracking at z=0 
+        // (Dynamically lookAt camera would be better, but plane at z=0 is fine for this view)
+        const plane = new THREE.Mesh(
+            new THREE.PlaneGeometry(500, 500),
+            new THREE.MeshBasicMaterial({ visible: false })
+        );
+        scene.add(plane);
 
-        // Global Mouse Interaction (Classic)
-        let targetIntensity = 0;
-        window.addEventListener('mousemove', (event) => {
-            // Normalize Mouse Y [0, 1]
-            let y = 1.0 - (event.clientY / window.innerHeight);
-            targetIntensity = y;
+        window.addEventListener('mousemove', (e) => {
+            mouse2D.x = (e.clientX / window.innerWidth) * 2 - 1;
+            mouse2D.y = -(e.clientY / window.innerHeight) * 2 + 1;
+
+            // Fade out hint
+            document.getElementById('hint').style.opacity = 0;
+
+            // Update attractor position
+            raycaster.setFromCamera(mouse2D, camera);
+            const intersects = raycaster.intersectObject(plane);
+            if (intersects.length > 0) {
+                targetPos.copy(intersects[0].point);
+            }
         });
 
         window.addEventListener('resize', () => {
@@ -374,29 +167,92 @@
             composer.setSize(window.innerWidth, window.innerHeight);
         });
 
-        // --- Animation Loop ---
-        const clock = new THREE.Clock();
-        let time = 0;
+        // --- Physics Loop ---
+        function updatePhysics() {
+            // Re-read position buffer
+            const posAttr = geometry.attributes.position;
+            const colAttr = geometry.attributes.color;
+
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                const i3 = i * 3;
+
+                // Current State
+                let px = positions[i3];
+                let py = positions[i3 + 1];
+                let pz = positions[i3 + 2];
+
+                let vx = velocities[i3];
+                let vy = velocities[i3 + 1];
+                let vz = velocities[i3 + 2];
+
+                // --- Calculate Forces ---
+
+                // 1. Attraction to Mouse
+                // Vector from Particle to Target
+                const dx = targetPos.x - px;
+                const dy = targetPos.y - py;
+                const dz = targetPos.z - pz;
+
+                // Distance squared
+                const distSq = dx * dx + dy * dy + dz * dz;
+
+                // F = G / dist (Softened)
+                // Avoid division by zero and limit force
+                const force = ATTRACTION_FORCE / (0.1 + distSq * 0.005);
+
+                // Apply acceleration
+                vx += dx * force;
+                vy += dy * force;
+                vz += dz * force;
+
+                // 2. Random Noise (Brownian motion) to keep it organic
+                vx += (Math.random() - 0.5) * 0.05;
+                vy += (Math.random() - 0.5) * 0.05;
+                vz += (Math.random() - 0.5) * 0.05;
+
+                // 3. Damping (Friction)
+                vx *= DAMPING;
+                vy *= DAMPING;
+                vz *= DAMPING;
+
+                // Update Position
+                px += vx;
+                py += vy;
+                pz += vz;
+
+                // Store back
+                positions[i3] = px;
+                positions[i3 + 1] = py;
+                positions[i3 + 2] = pz;
+
+                velocities[i3] = vx;
+                velocities[i3 + 1] = vy;
+                velocities[i3 + 2] = vz;
+
+                // --- Dynamic Coloring based on Speed ---
+                const speed = Math.sqrt(vx * vx + vy * vy + vz * vz);
+                const nSpeed = Math.min(speed / 1.5, 1.0); // Normalize roughly
+
+                // Slow: Deep Blue (0.0, 0.2, 0.6)
+                // Fast: White/Pink (1.0, 0.8, 0.9)
+                colAttr.array[i3] = 0.0 + nSpeed * 1.0;
+                colAttr.array[i3 + 1] = 0.2 + nSpeed * 0.6;
+                colAttr.array[i3 + 2] = 0.6 + nSpeed * 0.3;
+            }
+
+            posAttr.needsUpdate = true;
+            colAttr.needsUpdate = true;
+        }
 
         function animate() {
             requestAnimationFrame(animate);
 
-            const delta = clock.getDelta();
-            time += delta * cfg.speed;
+            updatePhysics();
 
-            particlesMaterial.uniforms.uTime.value = time;
-            particlesMaterial.uniforms.uHeightScale.value = cfg.heightScale;
+            // Slowly rotate the entire system for extra depth
+            scene.rotation.y += 0.001;
+            scene.rotation.x += 0.0005;
 
-            // Lerp intensity
-            particlesMaterial.uniforms.uIntensity.value = THREE.MathUtils.lerp(
-                particlesMaterial.uniforms.uIntensity.value,
-                targetIntensity,
-                0.05
-            );
-
-            stars.rotation.y = time * 0.02;
-
-            controls.update();
             composer.render();
         }
 
