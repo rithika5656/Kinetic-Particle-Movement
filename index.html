@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kinetic Particle Field</title>
+    <title>Kinetic Particle Field (High Visibility)</title>
     <style>
         body {
             margin: 0;
@@ -56,21 +56,20 @@
         import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-        // --- Configuration (High Fidelity Field) ---
+        // --- Configuration (High Visibility) ---
         const PARTICLE_COUNT = 18000;
-        const FIELD_SIZE = 800; // Wide distribution
+        const FIELD_SIZE = 800;
 
-        // Physics Constants
         const MAX_SPEED = 2.0;
         const MAX_FORCE = 0.05;
         const DAMPING = 0.95;
-        const RETURN_FORCE = 0.002; // Very gentle pull back to home
-        const INFLUENCE_RADIUS = 250; // Radius of mouse interaction
+        const RETURN_FORCE = 0.002;
+        const INFLUENCE_RADIUS = 300;
 
         // --- Setup Scene ---
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x030305);
-        scene.fog = new THREE.FogExp2(0x030305, 0.0015); // Layered depth
+        scene.background = new THREE.Color(0x050508); // Slightly lighter black
+        scene.fog = new THREE.FogExp2(0x050508, 0.0015);
 
         const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 4000);
         camera.position.set(0, 0, 400);
@@ -88,7 +87,7 @@
 
         const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
         bloomPass.threshold = 0.1;
-        bloomPass.strength = 0.8; // Soft glow
+        bloomPass.strength = 1.0;
         bloomPass.radius = 0.5;
 
         const composer = new EffectComposer(renderer);
@@ -97,26 +96,25 @@
 
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
-        controls.autoRotate = true; // Gentle global rotation
+        controls.autoRotate = true;
         controls.autoRotateSpeed = 0.2;
         controls.enabled = true;
 
         // --- Physics Arrays ---
         const positions = new Float32Array(PARTICLE_COUNT * 3);
-        const homePositions = new Float32Array(PARTICLE_COUNT * 3); // The "Anchor"
+        const homePositions = new Float32Array(PARTICLE_COUNT * 3);
         const velocities = new Float32Array(PARTICLE_COUNT * 3);
         const colors = new Float32Array(PARTICLE_COUNT * 3);
-        const seeds = new Float32Array(PARTICLE_COUNT); // For unique autonomous motion
+        const seeds = new Float32Array(PARTICLE_COUNT);
 
-        // --- Initialization (Expansive Field) ---
+        // --- Initialization ---
         const geometry = new THREE.BufferGeometry();
 
         for (let i = 0; i < PARTICLE_COUNT; i++) {
             const i3 = i * 3;
 
-            // Random distribution in a large cloud/box
             const x = (Math.random() - 0.5) * FIELD_SIZE;
-            const y = (Math.random() - 0.5) * FIELD_SIZE * 0.6; // Flatter
+            const y = (Math.random() - 0.5) * FIELD_SIZE * 0.6;
             const z = (Math.random() - 0.5) * FIELD_SIZE;
 
             positions[i3] = x;
@@ -138,13 +136,14 @@
         geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
         const material = new THREE.PointsMaterial({
-            size: 1.2,
+            size: 2.5, // VISIBLE SIZE
             vertexColors: true,
             blending: THREE.AdditiveBlending,
             depthWrite: false,
             transparent: true,
-            opacity: 0.4,
-            map: createSoftParticleTexture()
+            opacity: 0.8, // HIGHER OPACITY
+            map: createSoftParticleTexture(),
+            sizeAttenuation: true // ENSURE PERSPECTIVE
         });
 
         const particleSystem = new THREE.Points(geometry, material);
@@ -241,14 +240,13 @@
                     steerY = desiredY - vy;
                     steerZ = desiredZ - vz;
 
-                    // Brighten color when influenced
-                    colAttr.array[i3] = 0.5; // Cyan/White Boost
-                    colAttr.array[i3 + 1] = 0.8;
+                    // Brighten color when influenced (Bright White/Cyan)
+                    colAttr.array[i3] = 0.6;
+                    colAttr.array[i3 + 1] = 0.9;
                     colAttr.array[i3 + 2] = 1.0;
                 }
                 // --- B. Autonomous Field Motion ---
                 else {
-                    // Return to Home (Gentle Spring)
                     const hx = homePositions[i3] - px;
                     const hy = homePositions[i3 + 1] - py;
                     const hz = homePositions[i3 + 2] - pz;
@@ -257,17 +255,15 @@
                     steerY = hy * RETURN_FORCE;
                     steerZ = hz * RETURN_FORCE;
 
-                    // Drift noise (Perlin-ish)
                     const seed = seeds[i];
                     steerX += Math.sin(time * 0.5 + seed) * 0.002;
                     steerY += Math.cos(time * 0.3 + seed) * 0.002;
                     steerZ += Math.sin(time * 0.7 + seed) * 0.002;
 
-                    // Base Color (Deep ambient)
-                    // varied slightly by depth
-                    colAttr.array[i3] = 0.05;
-                    colAttr.array[i3 + 1] = 0.15;
-                    colAttr.array[i3 + 2] = 0.4 + Math.sin(seed) * 0.1;
+                    // Base Color (Brighter now)
+                    colAttr.array[i3] = 0.2;
+                    colAttr.array[i3 + 1] = 0.4;
+                    colAttr.array[i3 + 2] = 0.8 + Math.sin(seed) * 0.2;
                 }
 
                 // Apply Limits
@@ -287,7 +283,6 @@
                 vy *= DAMPING;
                 vz *= DAMPING;
 
-                // Update
                 positions[i3] = px + vx;
                 positions[i3 + 1] = py + vy;
                 positions[i3 + 2] = pz + vz;
