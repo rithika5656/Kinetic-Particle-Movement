@@ -9,26 +9,12 @@
         body {
             margin: 0;
             overflow: hidden;
-            background-color: #010103;
+            background-color: #050508;
             font-family: sans-serif;
         }
 
         canvas {
             display: block;
-        }
-
-        /* Hidden instruction for first interact */
-        #hint {
-            position: absolute;
-            bottom: 30px;
-            width: 100%;
-            text-align: center;
-            color: rgba(255, 255, 255, 0.3);
-            pointer-events: none;
-            font-size: 12px;
-            letter-spacing: 2px;
-            opacity: 1;
-            transition: opacity 2s;
         }
     </style>
     <!-- Import Map for Three.js -->
@@ -43,7 +29,6 @@
 </head>
 
 <body>
-    <div id="hint">MOVE CURSOR TO ATTRACT</div>
 
     <script type="module">
         import * as THREE from 'three';
@@ -51,19 +36,19 @@
         import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
         import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 
-        // --- Configuration ---
+        // --- Configuration (Tuned for Fluid Motion) ---
         const PARTICLE_COUNT = 15000;
-        const ATTRACTION_FORCE = 0.8;
-        const DAMPING = 0.96;
-        const MAX_SPEED = 4.0;
+        const MAX_SPEED = 3.5;       // Fast enough to follow
+        const MAX_FORCE = 0.08;      // LOW force = smooth turning (The key to "Soft Steering")
+        const DAMPING = 0.97;        // Friction to prevent infinite orbiting
 
         // --- Setup Scene ---
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x010103);
-        scene.fog = new THREE.FogExp2(0x010103, 0.003);
+        scene.background = new THREE.Color(0x050508);
+        scene.fog = new THREE.FogExp2(0x050508, 0.0035);
 
         const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
-        camera.position.set(0, 0, 150);
+        camera.position.set(0, 0, 160);
 
         const renderer = new THREE.WebGLRenderer({
             powerPreference: "high-performance",
@@ -73,22 +58,24 @@
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         document.body.appendChild(renderer.domElement);
 
-        // --- Post Processing (Bloom) ---
+        // --- Post Processing ---
         const renderScene = new RenderPass(scene, camera);
+
+        // Subtle, high-quality bloom
         const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
-        bloomPass.threshold = 0.0;
-        bloomPass.strength = 1.5;
-        bloomPass.radius = 0.8;
+        bloomPass.threshold = 0.2;
+        bloomPass.strength = 1.2;
+        bloomPass.radius = 0.5;
 
         const composer = new EffectComposer(renderer);
         composer.addPass(renderScene);
         composer.addPass(bloomPass);
 
-        // --- Physics State ---
-        // Storing physics data in typed arrays for CPU performance
+        // --- Physics Arrays ---
         const positions = new Float32Array(PARTICLE_COUNT * 3);
         const velocities = new Float32Array(PARTICLE_COUNT * 3);
-        const accelerations = new Float32Array(PARTICLE_COUNT * 3);
+        // We calculate acceleration per frame, no need to store it persistently really, but we can if we want complex forces
+
         const colors = new Float32Array(PARTICLE_COUNT * 3);
 
         // --- Initialization ---
@@ -97,8 +84,8 @@
         for (let i = 0; i < PARTICLE_COUNT; i++) {
             const i3 = i * 3;
 
-            // Random distribution in a large sphere
-            const r = 100 * Math.cbrt(Math.random());
+            // Sphere distribution
+            const r = 120 * Math.cbrt(Math.random());
             const theta = Math.random() * 2 * Math.PI;
             const phi = Math.acos(2 * Math.random() - 1);
 
@@ -106,26 +93,21 @@
             positions[i3 + 1] = r * Math.sin(phi) * Math.sin(theta);
             positions[i3 + 2] = r * Math.cos(phi);
 
-            velocities[i3] = (Math.random() - 0.5) * 0.2;
-            velocities[i3 + 1] = (Math.random() - 0.5) * 0.2;
-            velocities[i3 + 2] = (Math.random() - 0.5) * 0.2;
-
-            // Initial Color (Cyan/Blue base)
-            colors[i3] = 0.0;
-            colors[i3 + 1] = 0.5;
-            colors[i3 + 2] = 1.0;
+            velocities[i3] = (Math.random() - 0.5) * 0.5;
+            velocities[i3 + 1] = (Math.random() - 0.5) * 0.5;
+            velocities[i3 + 2] = (Math.random() - 0.5) * 0.5;
         }
 
         geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
         geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
         const material = new THREE.PointsMaterial({
-            size: 0.6,
+            size: 0.5,
             vertexColors: true,
             blending: THREE.AdditiveBlending,
             depthWrite: false,
             transparent: true,
-            opacity: 0.8
+            opacity: 0.6
         });
 
         const particleSystem = new THREE.Points(geometry, material);
@@ -134,25 +116,21 @@
 
         // --- Interaction ---
         const raycaster = new THREE.Raycaster();
-        const mouse2D = new THREE.Vector2(999, 999); // Start off screen
-        const targetPos = new THREE.Vector3(0, 0, 0);
-
-        // Invisible plane for 3D mouse tracking at z=0 
-        // (Dynamically lookAt camera would be better, but plane at z=0 is fine for this view)
+        const mouse2D = new THREE.Vector2(999, 999);
+        const targetPos = new THREE.Vector3(0, 0, 0); // The "Attractor"
         const plane = new THREE.Mesh(
-            new THREE.PlaneGeometry(500, 500),
+            new THREE.PlaneGeometry(800, 800),
             new THREE.MeshBasicMaterial({ visible: false })
         );
         scene.add(plane);
+
+        // Smooth target interpolation (The attractor itself moves smoothly)
+        const smoothedTarget = new THREE.Vector3(0, 0, 0);
 
         window.addEventListener('mousemove', (e) => {
             mouse2D.x = (e.clientX / window.innerWidth) * 2 - 1;
             mouse2D.y = -(e.clientY / window.innerHeight) * 2 + 1;
 
-            // Fade out hint
-            document.getElementById('hint').style.opacity = 0;
-
-            // Update attractor position
             raycaster.setFromCamera(mouse2D, camera);
             const intersects = raycaster.intersectObject(plane);
             if (intersects.length > 0) {
@@ -167,77 +145,89 @@
             composer.setSize(window.innerWidth, window.innerHeight);
         });
 
-        // --- Physics Loop ---
+        // --- Physics Core (Reynolds Seek) ---
         function updatePhysics() {
-            // Re-read position buffer
             const posAttr = geometry.attributes.position;
             const colAttr = geometry.attributes.color;
+
+            // Smoothly move the attractor point to the mouse (input lag smoothing)
+            smoothedTarget.lerp(targetPos, 0.1);
 
             for (let i = 0; i < PARTICLE_COUNT; i++) {
                 const i3 = i * 3;
 
-                // Current State
-                let px = positions[i3];
-                let py = positions[i3 + 1];
-                let pz = positions[i3 + 2];
-
+                // Read state
+                const px = positions[i3];
+                const py = positions[i3 + 1];
+                const pz = positions[i3 + 2];
                 let vx = velocities[i3];
                 let vy = velocities[i3 + 1];
                 let vz = velocities[i3 + 2];
 
-                // --- Calculate Forces ---
+                // --- Steering Behavior: Seek ---
+                // 1. Vector to Target
+                const dx = smoothedTarget.x - px;
+                const dy = smoothedTarget.y - py;
+                const dz = smoothedTarget.z - pz;
 
-                // 1. Attraction to Mouse
-                // Vector from Particle to Target
-                const dx = targetPos.x - px;
-                const dy = targetPos.y - py;
-                const dz = targetPos.z - pz;
-
-                // Distance squared
+                // 2. Distance
                 const distSq = dx * dx + dy * dy + dz * dz;
+                const dist = Math.sqrt(distSq);
 
-                // F = G / dist (Softened)
-                // Avoid division by zero and limit force
-                const force = ATTRACTION_FORCE / (0.1 + distSq * 0.005);
+                // 3. Desired Velocity
+                // We want to go at MAX_SPEED towards target
+                // If close (arrival), slow down? User said "orbit subtly", so maybe maintain speed to overshoot
+                let desiredX = (dx / dist) * MAX_SPEED;
+                let desiredY = (dy / dist) * MAX_SPEED;
+                let desiredZ = (dz / dist) * MAX_SPEED;
 
-                // Apply acceleration
-                vx += dx * force;
-                vy += dy * force;
-                vz += dz * force;
+                // 4. Steering Force = Desired - Current
+                let steerX = desiredX - vx;
+                let steerY = desiredY - vy;
+                let steerZ = desiredZ - vz;
 
-                // 2. Random Noise (Brownian motion) to keep it organic
-                vx += (Math.random() - 0.5) * 0.05;
-                vy += (Math.random() - 0.5) * 0.05;
-                vz += (Math.random() - 0.5) * 0.05;
+                // 5. Limit Steering Force (This creates the smooth turn)
+                const steerLenSq = steerX * steerX + steerY * steerY + steerZ * steerZ;
+                if (steerLenSq > MAX_FORCE * MAX_FORCE) {
+                    const scale = MAX_FORCE / Math.sqrt(steerLenSq);
+                    steerX *= scale;
+                    steerY *= scale;
+                    steerZ *= scale;
+                }
 
-                // 3. Damping (Friction)
+                // Apply Force
+                vx += steerX;
+                vy += steerY;
+                vz += steerZ;
+
+                // Damping (Drag)
                 vx *= DAMPING;
                 vy *= DAMPING;
                 vz *= DAMPING;
 
+                // Perlin-ish Noise / Wander (Optional)
+                vx += (Math.random() - 0.5) * 0.05;
+                vy += (Math.random() - 0.5) * 0.05;
+                vz += (Math.random() - 0.5) * 0.05;
+
                 // Update Position
-                px += vx;
-                py += vy;
-                pz += vz;
+                positions[i3] += vx;
+                positions[i3 + 1] += vy;
+                positions[i3 + 2] += vz;
 
-                // Store back
-                positions[i3] = px;
-                positions[i3 + 1] = py;
-                positions[i3 + 2] = pz;
-
+                // Save Velocity
                 velocities[i3] = vx;
                 velocities[i3 + 1] = vy;
                 velocities[i3 + 2] = vz;
 
-                // --- Dynamic Coloring based on Speed ---
-                const speed = Math.sqrt(vx * vx + vy * vy + vz * vz);
-                const nSpeed = Math.min(speed / 1.5, 1.0); // Normalize roughly
+                // Color based on Speed
+                // Smooth transition from Dark Blue to Bright Cyan/White
+                const speedSq = vx * vx + vy * vy + vz * vz;
+                const speedFactor = Math.min(speedSq * 0.1, 1.0); // Tuning dependent on speed range
 
-                // Slow: Deep Blue (0.0, 0.2, 0.6)
-                // Fast: White/Pink (1.0, 0.8, 0.9)
-                colAttr.array[i3] = 0.0 + nSpeed * 1.0;
-                colAttr.array[i3 + 1] = 0.2 + nSpeed * 0.6;
-                colAttr.array[i3 + 2] = 0.6 + nSpeed * 0.3;
+                colAttr.array[i3] = 0.1 + speedFactor * 0.8; // R
+                colAttr.array[i3 + 1] = 0.3 + speedFactor * 0.6; // G
+                colAttr.array[i3 + 2] = 0.7 + speedFactor * 0.3; // B
             }
 
             posAttr.needsUpdate = true;
@@ -246,12 +236,12 @@
 
         function animate() {
             requestAnimationFrame(animate);
-
             updatePhysics();
 
-            // Slowly rotate the entire system for extra depth
-            scene.rotation.y += 0.001;
-            scene.rotation.x += 0.0005;
+            // Subtle camera movement
+            camera.position.x += (mouse2D.x * 20 - camera.position.x) * 0.01;
+            camera.position.y += (mouse2D.y * 20 - camera.position.y) * 0.01;
+            camera.lookAt(0, 0, 0);
 
             composer.render();
         }
