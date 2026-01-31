@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kinetic Particle Field (High Visibility)</title>
+    <title>Kinetic Particle Field (Cylinder Interaction)</title>
     <style>
         body {
             margin: 0;
@@ -56,19 +56,19 @@
         import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-        // --- Configuration (High Visibility) ---
+        // --- Configuration ---
         const PARTICLE_COUNT = 18000;
         const FIELD_SIZE = 800;
 
-        const MAX_SPEED = 2.0;
-        const MAX_FORCE = 0.05;
+        const MAX_SPEED = 2.5;       // Slightly faster to catch up
+        const MAX_FORCE = 0.08;      // Stronger steering to stick to cursor
         const DAMPING = 0.95;
         const RETURN_FORCE = 0.002;
         const INFLUENCE_RADIUS = 300;
 
         // --- Setup Scene ---
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x050508); // Slightly lighter black
+        scene.background = new THREE.Color(0x050508);
         scene.fog = new THREE.FogExp2(0x050508, 0.0015);
 
         const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 4000);
@@ -136,14 +136,14 @@
         geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
         const material = new THREE.PointsMaterial({
-            size: 2.5, // VISIBLE SIZE
+            size: 2.5,
             vertexColors: true,
             blending: THREE.AdditiveBlending,
             depthWrite: false,
             transparent: true,
-            opacity: 0.8, // HIGHER OPACITY
+            opacity: 0.8,
             map: createSoftParticleTexture(),
-            sizeAttenuation: true // ENSURE PERSPECTIVE
+            sizeAttenuation: true
         });
 
         const particleSystem = new THREE.Points(geometry, material);
@@ -213,24 +213,28 @@
                 let vy = velocities[i3 + 1];
                 let vz = velocities[i3 + 2];
 
-                // 1. Local Interaction Check
+                // 1. Interaction Vectors
                 const dx = smoothedTarget.x - px;
                 const dy = smoothedTarget.y - py;
                 const dz = smoothedTarget.z - pz;
-                const distSq = dx * dx + dy * dy + dz * dz;
-                const dist = Math.sqrt(distSq);
+
+                // NEW: Use 2D Distance (XY Cylinder) for interaction trigger
+                // This ensures particles DEEP in the background still react if under the mouse
+                const dist2DSq = dx * dx + dy * dy;
+                const dist = Math.sqrt(dx * dx + dy * dy + dz * dz); // Keep accurate 3D dist for force calculation
 
                 let steerX = 0, steerY = 0, steerZ = 0;
 
-                // --- A. Local Influence Zone ---
-                if (dist < INFLUENCE_RADIUS) {
+                // --- A. Local Influence Zone (Cylinder Beam) ---
+                if (dist2DSq < INFLUENCE_RADIUS * INFLUENCE_RADIUS) {
                     // Soft Seek + Orbital Force
-                    // Seek
+
+                    // Seek Force (Towards 3D target)
                     let desiredX = (dx / dist) * MAX_SPEED;
                     let desiredY = (dy / dist) * MAX_SPEED;
                     let desiredZ = (dz / dist) * MAX_SPEED;
 
-                    // Add Tangent/Orbit Force
+                    // Vortex Force (Spin)
                     const vortexX = -dz;
                     const vortexZ = dx;
                     desiredX += vortexX * 0.8;
@@ -240,7 +244,7 @@
                     steerY = desiredY - vy;
                     steerZ = desiredZ - vz;
 
-                    // Brighten color when influenced (Bright White/Cyan)
+                    // Brighten color when influenced
                     colAttr.array[i3] = 0.6;
                     colAttr.array[i3 + 1] = 0.9;
                     colAttr.array[i3 + 2] = 1.0;
@@ -260,7 +264,7 @@
                     steerY += Math.cos(time * 0.3 + seed) * 0.002;
                     steerZ += Math.sin(time * 0.7 + seed) * 0.002;
 
-                    // Base Color (Brighter now)
+                    // Base Color
                     colAttr.array[i3] = 0.2;
                     colAttr.array[i3 + 1] = 0.4;
                     colAttr.array[i3 + 2] = 0.8 + Math.sin(seed) * 0.2;
@@ -283,6 +287,7 @@
                 vy *= DAMPING;
                 vz *= DAMPING;
 
+                // Update Position
                 positions[i3] = px + vx;
                 positions[i3 + 1] = py + vy;
                 positions[i3 + 2] = pz + vz;
