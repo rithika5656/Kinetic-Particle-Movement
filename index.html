@@ -120,14 +120,14 @@
 
     <div id="ui-panel">
         <h1>KINETIC WAVE</h1>
-        <p>Interactive 3D field. Particles lift where you hover.</p>
+        <p>Classic Ocean Mode. Mouse height controls energy.</p>
 
         <div class="control-group">
             <div class="label-row">
                 <span>Wave Speed</span>
-                <span id="val-speed">0.8</span>
+                <span id="val-speed">1.0</span>
             </div>
-            <input type="range" id="input-speed" min="0" max="3" step="0.1" value="0.8">
+            <input type="range" id="input-speed" min="0" max="3" step="0.1" value="1.0">
         </div>
 
         <div class="control-group">
@@ -141,9 +141,9 @@
         <div class="control-group">
             <div class="label-row">
                 <span>Glow Intensity</span>
-                <span id="val-bloom">1.2</span>
+                <span id="val-bloom">1.5</span>
             </div>
-            <input type="range" id="input-bloom" min="0" max="3" step="0.1" value="1.2">
+            <input type="range" id="input-bloom" min="0" max="3" step="0.1" value="1.5">
         </div>
     </div>
 
@@ -156,9 +156,9 @@
 
         // --- Configuration ---
         const cfg = {
-            speed: 0.8,
+            speed: 1.0,
             heightScale: 1.0,
-            bloomStrength: 1.2
+            bloomStrength: 1.5
         };
 
         const PARTICLE_COUNT_X = 200;
@@ -252,10 +252,10 @@
         particlesGeometry.setAttribute('scale', new THREE.BufferAttribute(scales, 1));
         particlesGeometry.setAttribute('aOffset', new THREE.BufferAttribute(offsets, 1));
 
-        // Vertex Shader
+        // Vertex Shader - REVERTED TO CLASSIC WAVE
         const vertexShader = `
             uniform float uTime;
-            uniform vec3 uMousePos; // 3D Mouse Position
+            uniform float uIntensity; // Global Intensity (Mouse Y)
             uniform float uHeightScale;
             
             attribute float aOffset;
@@ -266,24 +266,20 @@
             void main() {
                 vec3 newPosition = position;
 
-                // 1. Base Ambient Wave
-                float y = sin(newPosition.x * 0.05 + uTime * 0.8) * 3.0; 
-                y += sin(newPosition.z * 0.1 + uTime * 0.4) * 3.0;
+                float dist = distance(newPosition.xz, vec2(0.0));
                 
-                // 2. Local Mouse Interaction (Magnetic Lift)
-                float distToMouse = distance(newPosition.xz, uMousePos.xz);
-                
-                // Gaussian Bell Curve for smooth "Mountain" lift
-                // exp(-k * distance^2) defines the width of the bell
-                float mouseEffect = 25.0 * exp(-0.005 * distToMouse * distToMouse);
-                
-                // Add a small ripple on top of the lift for energy
-                mouseEffect += sin(distToMouse * 0.5 - uTime * 8.0) * (mouseEffect * 0.2);
-                
-                y += mouseEffect;
+                // --- Classic Complex Wave Function ---
+                // Primary Sine
+                float y = sin(newPosition.x * 0.1 + uTime * 1.5 + aOffset) * 2.0; 
+                // Secondary Cosine crossing
+                y += cos(newPosition.z * 0.08 + uTime * 1.2) * 2.0;
+                // Ripple from center
+                y += sin(dist * 0.15 - uTime * 2.0) * 3.0;
 
-                // Scale modifiers
+                // Modifiers
                 y *= uHeightScale;
+                // Global Interaction: Mouse boosts the entire wave height
+                y *= (1.0 + uIntensity * 2.0); 
 
                 newPosition.y = y;
 
@@ -291,24 +287,22 @@
                 gl_Position = projectionMatrix * mvPosition;
 
                 // Size attenuation
-                gl_PointSize = scale * ( 300.0 / - mvPosition.z );
+                gl_PointSize = scale * ( 250.0 / - mvPosition.z );
                 
                 // --- Coloring ---
-                float heightFactor = smoothstep(-10.0, 30.0, y);
+                float heightFactor = smoothstep(-10.0, 15.0, y);
                 
                 vec3 colorDeep = vec3(0.02, 0.02, 0.1);    // Void Purple
                 vec3 colorMid  = vec3(0.0, 0.5, 0.8);      // Electric Blue
                 vec3 colorHigh = vec3(0.0, 1.0, 0.9);      // Cyan
-                vec3 colorPeak = vec3(1.0, 0.8, 0.9);      // White/Pink Hot
+                vec3 colorPeak = vec3(0.8, 0.1, 0.6);      // Magenta Hot
 
-                vec3 finalColor = mix(colorDeep, colorMid, smoothstep(0.0, 0.3, heightFactor));
-                finalColor = mix(finalColor, colorHigh, smoothstep(0.3, 0.6, heightFactor));
-                finalColor = mix(finalColor, colorPeak, smoothstep(0.7, 1.0, heightFactor));
+                vec3 finalColor = mix(colorDeep, colorMid, smoothstep(0.0, 0.4, heightFactor));
+                finalColor = mix(finalColor, colorHigh, smoothstep(0.4, 0.7, heightFactor));
+                finalColor = mix(finalColor, colorPeak, smoothstep(0.8, 1.0, heightFactor));
                 
-                // Highlight lift area strongly
-                if(distToMouse < 30.0) {
-                     finalColor += vec3(0.5, 0.5, 1.0) * (1.0 - distToMouse/30.0);
-                }
+                // Brighten on high intensity
+                finalColor += vec3(uIntensity * 0.3);
 
                 vColor = finalColor;
             }
@@ -332,7 +326,7 @@
         const particlesMaterial = new THREE.ShaderMaterial({
             uniforms: {
                 uTime: { value: 0 },
-                uMousePos: { value: new THREE.Vector3(0, -9999, 0) }, // Default off-screen
+                uIntensity: { value: 0 },
                 uHeightScale: { value: 1.0 }
             },
             vertexShader: vertexShader,
@@ -344,16 +338,6 @@
 
         const particleSystem = new THREE.Points(particlesGeometry, particlesMaterial);
         scene.add(particleSystem);
-
-        // --- Raycaster for 3D Mouse Tracking ---
-        const raycaster = new THREE.Raycaster();
-        const mouse = new THREE.Vector2();
-
-        // Invisible plane for raycasting against (y=0)
-        const planeGeometry = new THREE.PlaneGeometry(2000, 2000);
-        const plane = new THREE.Mesh(planeGeometry, new THREE.MeshBasicMaterial({ visible: false }));
-        plane.rotation.x = -Math.PI / 2;
-        scene.add(plane);
 
         // UI Binding
         const uiSpeed = document.getElementById('input-speed');
@@ -375,19 +359,12 @@
         });
 
 
+        // Global Mouse Interaction (Classic)
+        let targetIntensity = 0;
         window.addEventListener('mousemove', (event) => {
-            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-
-            // Raycast
-            raycaster.setFromCamera(mouse, camera);
-            const intersects = raycaster.intersectObject(plane);
-
-            if (intersects.length > 0) {
-                const point = intersects[0].point;
-                // Move the interaction point to the shader
-                particlesMaterial.uniforms.uMousePos.value.set(point.x, point.y, point.z);
-            }
+            // Normalize Mouse Y [0, 1]
+            let y = 1.0 - (event.clientY / window.innerHeight);
+            targetIntensity = y;
         });
 
         window.addEventListener('resize', () => {
@@ -409,6 +386,13 @@
 
             particlesMaterial.uniforms.uTime.value = time;
             particlesMaterial.uniforms.uHeightScale.value = cfg.heightScale;
+
+            // Lerp intensity
+            particlesMaterial.uniforms.uIntensity.value = THREE.MathUtils.lerp(
+                particlesMaterial.uniforms.uIntensity.value,
+                targetIntensity,
+                0.05
+            );
 
             stars.rotation.y = time * 0.02;
 
