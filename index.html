@@ -5,34 +5,104 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Kinetic Particle Wave</title>
+    <!-- Modern Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700&display=swap" rel="stylesheet">
     <style>
         body {
             margin: 0;
             overflow: hidden;
             background-color: #020205;
-            font-family: 'Inter', sans-serif;
+            font-family: 'Outfit', sans-serif;
         }
 
         canvas {
             display: block;
         }
 
-        #ui {
+        /* Glassmorphism UI Panel */
+        #ui-panel {
             position: absolute;
-            top: 20px;
-            left: 20px;
-            color: rgba(255, 255, 255, 0.7);
-            pointer-events: none;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            font-size: 12px;
-            z-index: 10;
+            top: 24px;
+            left: 24px;
+            width: 280px;
+            padding: 24px;
+            background: rgba(20, 20, 30, 0.4);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            color: #fff;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+            z-index: 100;
+            transition: opacity 0.3s ease;
         }
 
-        .instruction {
-            margin-top: 8px;
-            font-size: 10px;
-            color: rgba(255, 255, 255, 0.4);
+        h1 {
+            margin: 0 0 8px 0;
+            font-size: 18px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            background: linear-gradient(90deg, #fff, #a2d2ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        p {
+            margin: 0 0 24px 0;
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.5);
+            line-height: 1.4;
+        }
+
+        .control-group {
+            margin-bottom: 16px;
+        }
+
+        .label-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 11px;
+            font-weight: 500;
+            color: rgba(255, 255, 255, 0.8);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* Custom Range Slider */
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: transparent;
+        }
+
+        input[type=range]:focus {
+            outline: none;
+        }
+
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 2px;
+        }
+
+        input[type=range]::-webkit-slider-thumb {
+            height: 14px;
+            width: 14px;
+            border-radius: 50%;
+            background: #4cc9f0;
+            cursor: pointer;
+            -webkit-appearance: none;
+            margin-top: -5px;
+            box-shadow: 0 0 10px rgba(76, 201, 240, 0.5);
+            transition: transform 0.1s;
+        }
+
+        input[type=range]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+            background: #fff;
         }
     </style>
     <!-- Import Map for Three.js -->
@@ -47,9 +117,34 @@
 </head>
 
 <body>
-    <div id="ui">
-        <div>Kinetic Field</div>
-        <div class="instruction">Move mouse to disturb • Scroll to zoom</div>
+
+    <div id="ui-panel">
+        <h1>KINETIC WAVE</h1>
+        <p>Interactive 3D field simulation. Move mouse vertically to disturb particles.</p>
+
+        <div class="control-group">
+            <div class="label-row">
+                <span>Wave Speed</span>
+                <span id="val-speed">1.0</span>
+            </div>
+            <input type="range" id="input-speed" min="0" max="3" step="0.1" value="0.8">
+        </div>
+
+        <div class="control-group">
+            <div class="label-row">
+                <span>Height</span>
+                <span id="val-height">1.0</span>
+            </div>
+            <input type="range" id="input-height" min="0" max="3" step="0.1" value="1.0">
+        </div>
+
+        <div class="control-group">
+            <div class="label-row">
+                <span>Glow Intensity</span>
+                <span id="val-bloom">1.2</span>
+            </div>
+            <input type="range" id="input-bloom" min="0" max="3" step="0.1" value="1.2">
+        </div>
     </div>
 
     <script type="module">
@@ -60,19 +155,25 @@
         import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 
         // --- Configuration ---
-        const PARTICLE_COUNT_X = 200; // Increased density
+        const cfg = {
+            speed: 0.8,
+            heightScale: 1.0,
+            bloomStrength: 1.2
+        };
+
+        const PARTICLE_COUNT_X = 200;
         const PARTICLE_COUNT_Z = 200;
         const SEPARATION = 1.0;
 
         // --- Setup Scene ---
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x020205); // Darker void black
+        scene.background = new THREE.Color(0x020205);
         scene.fog = new THREE.FogExp2(0x020205, 0.002);
 
         const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 2000);
-        camera.position.set(0, 60, 140); // Lower angle for cinematic view
+        camera.position.set(0, 60, 140);
 
-        const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance", stencil: false, depth: false }); // Antialias off for post-processing performance
+        const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance", stencil: false, depth: false });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         renderer.toneMapping = THREE.ReinhardToneMapping;
@@ -81,7 +182,7 @@
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
         controls.autoRotate = true;
-        controls.autoRotateSpeed = 0.8;
+        controls.autoRotateSpeed = 0.5;
         controls.maxDistance = 400;
         controls.minDistance = 20;
 
@@ -90,7 +191,7 @@
 
         const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
         bloomPass.threshold = 0.0;
-        bloomPass.strength = 1.2; // Intense glow
+        bloomPass.strength = cfg.bloomStrength;
         bloomPass.radius = 0.5;
 
         const composer = new EffectComposer(renderer);
@@ -145,6 +246,7 @@
         const vertexShader = `
             uniform float uTime;
             uniform float uIntensity; 
+            uniform float uHeightScale;
             
             attribute float aOffset;
             attribute float scale;
@@ -164,7 +266,8 @@
                 // Detail ripples
                 y += sin(dist * 0.1 - uTime * 2.0 + aOffset) * 2.0;
 
-                // Mouse/Intensity interaction
+                // Modifiers
+                y *= uHeightScale;
                 y *= (0.8 + uIntensity * 1.5); 
 
                 newPosition.y = y;
@@ -216,13 +319,14 @@
         const particlesMaterial = new THREE.ShaderMaterial({
             uniforms: {
                 uTime: { value: 0 },
-                uIntensity: { value: 0 }
+                uIntensity: { value: 0 },
+                uHeightScale: { value: 1.0 }
             },
             vertexShader: vertexShader,
             fragmentShader: fragmentShader,
             transparent: true,
             depthWrite: false,
-            blending: THREE.AdditiveBlending // Critical for glow
+            blending: THREE.AdditiveBlending
         });
 
         const particleSystem = new THREE.Points(particlesGeometry, particlesMaterial);
@@ -232,10 +336,37 @@
         const mouse = new THREE.Vector2();
         let targetIntensity = 0;
 
+        // UI Elements binding
+        const uiSpeed = document.getElementById('input-speed');
+        const uiHeight = document.getElementById('input-height');
+        const uiBloom = document.getElementById('input-bloom');
+
+        uiSpeed.addEventListener('input', (e) => {
+            cfg.speed = parseFloat(e.target.value);
+            document.getElementById('val-speed').innerText = cfg.speed.toFixed(1);
+        });
+
+        uiHeight.addEventListener('input', (e) => {
+            cfg.heightScale = parseFloat(e.target.value);
+            document.getElementById('val-height').innerText = cfg.heightScale.toFixed(1);
+        });
+
+        uiBloom.addEventListener('input', (e) => {
+            cfg.bloomStrength = parseFloat(e.target.value);
+            bloomPass.strength = cfg.bloomStrength;
+            document.getElementById('val-bloom').innerText = cfg.bloomStrength.toFixed(1);
+        });
+
+
         window.addEventListener('mousemove', (event) => {
+            // Only affect if not hovering UI
+            // But UI intercepts events anyway so its fine
             mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
             mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-            targetIntensity = (mouse.y + 1) * 0.8;
+
+            // Map Y bottom(-1) to top(1) -> 0 to 1
+            let influence = (mouse.y + 1) * 0.5;
+            targetIntensity = influence;
         });
 
         window.addEventListener('resize', () => {
@@ -247,13 +378,18 @@
 
         // --- Animation Loop ---
         const clock = new THREE.Clock();
+        // Custom time accumulator so changing speed doesn't jump the phase
+        let time = 0;
 
         function animate() {
             requestAnimationFrame(animate);
 
-            const elapsedTime = clock.getElapsedTime();
+            const delta = clock.getDelta();
+            time += delta * cfg.speed;
 
-            particlesMaterial.uniforms.uTime.value = elapsedTime;
+            particlesMaterial.uniforms.uTime.value = time;
+            particlesMaterial.uniforms.uHeightScale.value = cfg.heightScale;
+
             particlesMaterial.uniforms.uIntensity.value = THREE.MathUtils.lerp(
                 particlesMaterial.uniforms.uIntensity.value,
                 targetIntensity,
@@ -261,11 +397,9 @@
             );
 
             // Rotate stars slowly
-            stars.rotation.y = elapsedTime * 0.05;
+            stars.rotation.y = time * 0.02;
 
             controls.update();
-
-            // Render via Composer for Bloom
             composer.render();
         }
 
