@@ -120,7 +120,7 @@
 
     <div id="ui-panel">
         <h1>KINETIC WAVE</h1>
-        <p>Interactive 3D field simulation. Move mouse vertically to disturb particles.</p>
+        <p>Interactive 3D field. Particles ripple where you hover.</p>
 
         <div class="control-group">
             <div class="label-row">
@@ -132,7 +132,7 @@
 
         <div class="control-group">
             <div class="label-row">
-                <span>Height</span>
+                <span>Base Height</span>
                 <span id="val-height">1.0</span>
             </div>
             <input type="range" id="input-height" min="0" max="3" step="0.1" value="1.0">
@@ -171,7 +171,7 @@
         scene.fog = new THREE.FogExp2(0x020205, 0.002);
 
         const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 2000);
-        camera.position.set(0, 60, 140);
+        camera.position.set(0, 70, 120);
 
         const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance", stencil: false, depth: false });
         renderer.setSize(window.innerWidth, window.innerHeight);
@@ -200,13 +200,23 @@
 
         // --- Starfield Background ---
         const starGeometry = new THREE.BufferGeometry();
-        const starCount = 3000;
+        const starCount = 4000;
         const starPos = new Float32Array(starCount * 3);
+        const starSizes = new Float32Array(starCount);
         for (let i = 0; i < starCount * 3; i++) {
-            starPos[i] = (Math.random() - 0.5) * 800; // Big spread
+            starPos[i] = (Math.random() - 0.5) * 800;
+            if (i % 3 === 0) starSizes[i / 3] = Math.random();
         }
         starGeometry.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
-        const starMaterial = new THREE.PointsMaterial({ color: 0xffffff, size: 0.8, transparent: true, opacity: 0.6 });
+        starGeometry.setAttribute('size', new THREE.BufferAttribute(starSizes, 1));
+
+        const starMaterial = new THREE.PointsMaterial({
+            color: 0xffffff,
+            size: 0.8,
+            transparent: true,
+            opacity: 0.6,
+            sizeAttenuation: true
+        });
         const stars = new THREE.Points(starGeometry, starMaterial);
         scene.add(stars);
 
@@ -245,7 +255,7 @@
         // Vertex Shader
         const vertexShader = `
             uniform float uTime;
-            uniform float uIntensity; 
+            uniform vec3 uMousePos; // 3D Mouse Position
             uniform float uHeightScale;
             
             attribute float aOffset;
@@ -256,19 +266,25 @@
             void main() {
                 vec3 newPosition = position;
 
-                float dist = distance(newPosition.xz, vec2(0.0));
+                // 1. Base Ambient Wave
+                float y = sin(newPosition.x * 0.05 + uTime * 0.8) * 3.0; 
+                y += sin(newPosition.z * 0.1 + uTime * 0.4) * 3.0;
                 
-                // Enhanced Wave Function
-                // Main breathing swell
-                float y = sin(newPosition.x * 0.05 + uTime * 0.8) * 4.0; 
-                // Grid ripples
-                y += sin(newPosition.z * 0.1 + uTime * 0.4) * 4.0;
-                // Detail ripples
-                y += sin(dist * 0.1 - uTime * 2.0 + aOffset) * 2.0;
+                // 2. Local Mouse Interaction (Ripple)
+                float distToMouse = distance(newPosition.xz, uMousePos.xz);
+                float mouseEffectRange = 30.0; // Radius of influence
+                
+                // Smooth falloff based on distance
+                float mouseInfluence = smoothstep(mouseEffectRange, 0.0, distToMouse);
+                
+                // Panic/Ripple effect near mouse
+                // High frequency sine wave masked by the influence radius
+                float ripple = sin(distToMouse * 0.5 - uTime * 5.0) * 8.0 * mouseInfluence;
+                
+                y += ripple;
 
-                // Modifiers
+                // Scale modifiers
                 y *= uHeightScale;
-                y *= (0.8 + uIntensity * 1.5); 
 
                 newPosition.y = y;
 
@@ -279,10 +295,8 @@
                 gl_PointSize = scale * ( 250.0 / - mvPosition.z );
                 
                 // --- Coloring ---
-                // Mapping height to color gradient
                 float heightFactor = smoothstep(-10.0, 15.0, y);
                 
-                // Deep Ocean Night Palette
                 vec3 colorDeep = vec3(0.02, 0.02, 0.1);    // Void Purple
                 vec3 colorMid  = vec3(0.0, 0.5, 0.8);      // Electric Blue
                 vec3 colorHigh = vec3(0.0, 1.0, 0.9);      // Cyan
@@ -292,8 +306,8 @@
                 finalColor = mix(finalColor, colorHigh, smoothstep(0.4, 0.7, heightFactor));
                 finalColor = mix(finalColor, colorPeak, smoothstep(0.8, 1.0, heightFactor));
                 
-                // Intensity boost
-                finalColor += vec3(uIntensity * 0.2);
+                // Highlight areas near mouse
+                finalColor += vec3(0.5, 0.8, 1.0) * mouseInfluence * 0.8;
 
                 vColor = finalColor;
             }
@@ -304,11 +318,9 @@
             varying vec3 vColor;
             
             void main() {
-                // Circle shape
                 float r = distance( gl_PointCoord, vec2(0.5));
                 if ( r > 0.5 ) discard;
 
-                // Harder core for bloom trigger
                 float alpha = 1.0;
                 if(r > 0.3) alpha = 1.0 - smoothstep(0.3, 0.5, r);
 
@@ -319,7 +331,7 @@
         const particlesMaterial = new THREE.ShaderMaterial({
             uniforms: {
                 uTime: { value: 0 },
-                uIntensity: { value: 0 },
+                uMousePos: { value: new THREE.Vector3(0, -9999, 0) }, // Default off-screen
                 uHeightScale: { value: 1.0 }
             },
             vertexShader: vertexShader,
@@ -332,11 +344,17 @@
         const particleSystem = new THREE.Points(particlesGeometry, particlesMaterial);
         scene.add(particleSystem);
 
-        // --- Interaction ---
+        // --- Raycaster for 3D Mouse Tracking ---
+        const raycaster = new THREE.Raycaster();
         const mouse = new THREE.Vector2();
-        let targetIntensity = 0;
 
-        // UI Elements binding
+        // Invisible plane for raycasting against (y=0)
+        const planeGeometry = new THREE.PlaneGeometry(2000, 2000);
+        const plane = new THREE.Mesh(planeGeometry, new THREE.MeshBasicMaterial({ visible: false }));
+        plane.rotation.x = -Math.PI / 2;
+        scene.add(plane);
+
+        // UI Binding
         const uiSpeed = document.getElementById('input-speed');
         const uiHeight = document.getElementById('input-height');
         const uiBloom = document.getElementById('input-bloom');
@@ -345,12 +363,10 @@
             cfg.speed = parseFloat(e.target.value);
             document.getElementById('val-speed').innerText = cfg.speed.toFixed(1);
         });
-
         uiHeight.addEventListener('input', (e) => {
             cfg.heightScale = parseFloat(e.target.value);
             document.getElementById('val-height').innerText = cfg.heightScale.toFixed(1);
         });
-
         uiBloom.addEventListener('input', (e) => {
             cfg.bloomStrength = parseFloat(e.target.value);
             bloomPass.strength = cfg.bloomStrength;
@@ -359,14 +375,18 @@
 
 
         window.addEventListener('mousemove', (event) => {
-            // Only affect if not hovering UI
-            // But UI intercepts events anyway so its fine
             mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
             mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
-            // Map Y bottom(-1) to top(1) -> 0 to 1
-            let influence = (mouse.y + 1) * 0.5;
-            targetIntensity = influence;
+            // Raycast
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObject(plane);
+
+            if (intersects.length > 0) {
+                const point = intersects[0].point;
+                // Move the interaction point to the shader
+                particlesMaterial.uniforms.uMousePos.value.set(point.x, point.y, point.z);
+            }
         });
 
         window.addEventListener('resize', () => {
@@ -378,7 +398,6 @@
 
         // --- Animation Loop ---
         const clock = new THREE.Clock();
-        // Custom time accumulator so changing speed doesn't jump the phase
         let time = 0;
 
         function animate() {
@@ -390,13 +409,6 @@
             particlesMaterial.uniforms.uTime.value = time;
             particlesMaterial.uniforms.uHeightScale.value = cfg.heightScale;
 
-            particlesMaterial.uniforms.uIntensity.value = THREE.MathUtils.lerp(
-                particlesMaterial.uniforms.uIntensity.value,
-                targetIntensity,
-                0.05
-            );
-
-            // Rotate stars slowly
             stars.rotation.y = time * 0.02;
 
             controls.update();
