@@ -120,12 +120,12 @@
 
     <div id="ui-panel">
         <h1>KINETIC WAVE</h1>
-        <p>Interactive 3D field. Particles ripple where you hover.</p>
+        <p>Interactive 3D field. Particles lift where you hover.</p>
 
         <div class="control-group">
             <div class="label-row">
                 <span>Wave Speed</span>
-                <span id="val-speed">1.0</span>
+                <span id="val-speed">0.8</span>
             </div>
             <input type="range" id="input-speed" min="0" max="3" step="0.1" value="0.8">
         </div>
@@ -270,18 +270,17 @@
                 float y = sin(newPosition.x * 0.05 + uTime * 0.8) * 3.0; 
                 y += sin(newPosition.z * 0.1 + uTime * 0.4) * 3.0;
                 
-                // 2. Local Mouse Interaction (Ripple)
+                // 2. Local Mouse Interaction (Magnetic Lift)
                 float distToMouse = distance(newPosition.xz, uMousePos.xz);
-                float mouseEffectRange = 30.0; // Radius of influence
                 
-                // Smooth falloff based on distance
-                float mouseInfluence = smoothstep(mouseEffectRange, 0.0, distToMouse);
+                // Gaussian Bell Curve for smooth "Mountain" lift
+                // exp(-k * distance^2) defines the width of the bell
+                float mouseEffect = 25.0 * exp(-0.005 * distToMouse * distToMouse);
                 
-                // Panic/Ripple effect near mouse
-                // High frequency sine wave masked by the influence radius
-                float ripple = sin(distToMouse * 0.5 - uTime * 5.0) * 8.0 * mouseInfluence;
+                // Add a small ripple on top of the lift for energy
+                mouseEffect += sin(distToMouse * 0.5 - uTime * 8.0) * (mouseEffect * 0.2);
                 
-                y += ripple;
+                y += mouseEffect;
 
                 // Scale modifiers
                 y *= uHeightScale;
@@ -292,22 +291,24 @@
                 gl_Position = projectionMatrix * mvPosition;
 
                 // Size attenuation
-                gl_PointSize = scale * ( 250.0 / - mvPosition.z );
+                gl_PointSize = scale * ( 300.0 / - mvPosition.z );
                 
                 // --- Coloring ---
-                float heightFactor = smoothstep(-10.0, 15.0, y);
+                float heightFactor = smoothstep(-10.0, 30.0, y);
                 
                 vec3 colorDeep = vec3(0.02, 0.02, 0.1);    // Void Purple
                 vec3 colorMid  = vec3(0.0, 0.5, 0.8);      // Electric Blue
                 vec3 colorHigh = vec3(0.0, 1.0, 0.9);      // Cyan
-                vec3 colorPeak = vec3(0.8, 0.1, 0.6);      // Magenta Hot
+                vec3 colorPeak = vec3(1.0, 0.8, 0.9);      // White/Pink Hot
 
-                vec3 finalColor = mix(colorDeep, colorMid, smoothstep(0.0, 0.4, heightFactor));
-                finalColor = mix(finalColor, colorHigh, smoothstep(0.4, 0.7, heightFactor));
-                finalColor = mix(finalColor, colorPeak, smoothstep(0.8, 1.0, heightFactor));
+                vec3 finalColor = mix(colorDeep, colorMid, smoothstep(0.0, 0.3, heightFactor));
+                finalColor = mix(finalColor, colorHigh, smoothstep(0.3, 0.6, heightFactor));
+                finalColor = mix(finalColor, colorPeak, smoothstep(0.7, 1.0, heightFactor));
                 
-                // Highlight areas near mouse
-                finalColor += vec3(0.5, 0.8, 1.0) * mouseInfluence * 0.8;
+                // Highlight lift area strongly
+                if(distToMouse < 30.0) {
+                     finalColor += vec3(0.5, 0.5, 1.0) * (1.0 - distToMouse/30.0);
+                }
 
                 vColor = finalColor;
             }
