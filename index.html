@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kinetic Particle Swarm</title>
+    <title>Kinetic Particle Swarm (Debug)</title>
     <style>
         body {
             margin: 0;
@@ -15,6 +15,17 @@
 
         canvas {
             display: block;
+        }
+
+        #error-log {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: red;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px;
+            display: none;
+            z-index: 1000;
         }
     </style>
     <!-- Import Map for Three.js -->
@@ -29,18 +40,28 @@
 </head>
 
 <body>
+    <div id="error-log"></div>
+
+    <script>
+        window.onerror = function (msg, url, line) {
+            const div = document.getElementById('error-log');
+            div.style.display = 'block';
+            div.innerHTML += `Error: ${msg}<br>Line: ${line}<br>`;
+        };
+    </script>
 
     <script type="module">
         import * as THREE from 'three';
         import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
         import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
         import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js'; // Added back for safety
 
-        // --- Configuration (Tuned for Fluid Motion) ---
+        // --- Configuration ---
         const PARTICLE_COUNT = 15000;
-        const MAX_SPEED = 3.5;       // Fast enough to follow
-        const MAX_FORCE = 0.08;      // LOW force = smooth turning (The key to "Soft Steering")
-        const DAMPING = 0.97;        // Friction to prevent infinite orbiting
+        const MAX_SPEED = 3.5;
+        const MAX_FORCE = 0.08;
+        const DAMPING = 0.97;
 
         // --- Setup Scene ---
         const scene = new THREE.Scene();
@@ -61,7 +82,6 @@
         // --- Post Processing ---
         const renderScene = new RenderPass(scene, camera);
 
-        // Subtle, high-quality bloom
         const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
         bloomPass.threshold = 0.2;
         bloomPass.strength = 1.2;
@@ -71,11 +91,14 @@
         composer.addPass(renderScene);
         composer.addPass(bloomPass);
 
+        // --- Controls (Fallback) ---
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.enabled = true; // User can manually move if stuck
+
         // --- Physics Arrays ---
         const positions = new Float32Array(PARTICLE_COUNT * 3);
         const velocities = new Float32Array(PARTICLE_COUNT * 3);
-        // We calculate acceleration per frame, no need to store it persistently really, but we can if we want complex forces
-
         const colors = new Float32Array(PARTICLE_COUNT * 3);
 
         // --- Initialization ---
@@ -84,7 +107,6 @@
         for (let i = 0; i < PARTICLE_COUNT; i++) {
             const i3 = i * 3;
 
-            // Sphere distribution
             const r = 120 * Math.cbrt(Math.random());
             const theta = Math.random() * 2 * Math.PI;
             const phi = Math.acos(2 * Math.random() - 1);
@@ -116,15 +138,14 @@
 
         // --- Interaction ---
         const raycaster = new THREE.Raycaster();
-        const mouse2D = new THREE.Vector2(999, 999);
-        const targetPos = new THREE.Vector3(0, 0, 0); // The "Attractor"
+        const mouse2D = new THREE.Vector2(0, 0); // Start AT CENTER to prevent camera from flying away
+        const targetPos = new THREE.Vector3(0, 0, 0);
         const plane = new THREE.Mesh(
             new THREE.PlaneGeometry(800, 800),
             new THREE.MeshBasicMaterial({ visible: false })
         );
         scene.add(plane);
 
-        // Smooth target interpolation (The attractor itself moves smoothly)
         const smoothedTarget = new THREE.Vector3(0, 0, 0);
 
         window.addEventListener('mousemove', (e) => {
@@ -145,18 +166,16 @@
             composer.setSize(window.innerWidth, window.innerHeight);
         });
 
-        // --- Physics Core (Reynolds Seek) ---
+        // --- Physics Core ---
         function updatePhysics() {
             const posAttr = geometry.attributes.position;
             const colAttr = geometry.attributes.color;
 
-            // Smoothly move the attractor point to the mouse (input lag smoothing)
             smoothedTarget.lerp(targetPos, 0.1);
 
             for (let i = 0; i < PARTICLE_COUNT; i++) {
                 const i3 = i * 3;
 
-                // Read state
                 const px = positions[i3];
                 const py = positions[i3 + 1];
                 const pz = positions[i3 + 2];
@@ -164,29 +183,21 @@
                 let vy = velocities[i3 + 1];
                 let vz = velocities[i3 + 2];
 
-                // --- Steering Behavior: Seek ---
-                // 1. Vector to Target
                 const dx = smoothedTarget.x - px;
                 const dy = smoothedTarget.y - py;
                 const dz = smoothedTarget.z - pz;
 
-                // 2. Distance
                 const distSq = dx * dx + dy * dy + dz * dz;
                 const dist = Math.sqrt(distSq);
 
-                // 3. Desired Velocity
-                // We want to go at MAX_SPEED towards target
-                // If close (arrival), slow down? User said "orbit subtly", so maybe maintain speed to overshoot
-                let desiredX = (dx / dist) * MAX_SPEED;
-                let desiredY = (dy / dist) * MAX_SPEED;
-                let desiredZ = (dz / dist) * MAX_SPEED;
+                let desiredX = (dx / (dist + 0.01)) * MAX_SPEED; // +0.01 to avoid div0
+                let desiredY = (dy / (dist + 0.01)) * MAX_SPEED;
+                let desiredZ = (dz / (dist + 0.01)) * MAX_SPEED;
 
-                // 4. Steering Force = Desired - Current
                 let steerX = desiredX - vx;
                 let steerY = desiredY - vy;
                 let steerZ = desiredZ - vz;
 
-                // 5. Limit Steering Force (This creates the smooth turn)
                 const steerLenSq = steerX * steerX + steerY * steerY + steerZ * steerZ;
                 if (steerLenSq > MAX_FORCE * MAX_FORCE) {
                     const scale = MAX_FORCE / Math.sqrt(steerLenSq);
@@ -195,39 +206,33 @@
                     steerZ *= scale;
                 }
 
-                // Apply Force
                 vx += steerX;
                 vy += steerY;
                 vz += steerZ;
 
-                // Damping (Drag)
                 vx *= DAMPING;
                 vy *= DAMPING;
                 vz *= DAMPING;
 
-                // Perlin-ish Noise / Wander (Optional)
+                // Noise
                 vx += (Math.random() - 0.5) * 0.05;
                 vy += (Math.random() - 0.5) * 0.05;
                 vz += (Math.random() - 0.5) * 0.05;
 
-                // Update Position
-                positions[i3] += vx;
-                positions[i3 + 1] += vy;
-                positions[i3 + 2] += vz;
+                positions[i3] = px + vx;
+                positions[i3 + 1] = py + vy;
+                positions[i3 + 2] = pz + vz;
 
-                // Save Velocity
                 velocities[i3] = vx;
                 velocities[i3 + 1] = vy;
                 velocities[i3 + 2] = vz;
 
-                // Color based on Speed
-                // Smooth transition from Dark Blue to Bright Cyan/White
                 const speedSq = vx * vx + vy * vy + vz * vz;
-                const speedFactor = Math.min(speedSq * 0.1, 1.0); // Tuning dependent on speed range
+                const speedFactor = Math.min(speedSq * 0.1, 1.0);
 
-                colAttr.array[i3] = 0.1 + speedFactor * 0.8; // R
-                colAttr.array[i3 + 1] = 0.3 + speedFactor * 0.6; // G
-                colAttr.array[i3 + 2] = 0.7 + speedFactor * 0.3; // B
+                colAttr.array[i3] = 0.1 + speedFactor * 0.8;
+                colAttr.array[i3 + 1] = 0.3 + speedFactor * 0.6;
+                colAttr.array[i3 + 2] = 0.7 + speedFactor * 0.3;
             }
 
             posAttr.needsUpdate = true;
@@ -238,10 +243,7 @@
             requestAnimationFrame(animate);
             updatePhysics();
 
-            // Subtle camera movement
-            camera.position.x += (mouse2D.x * 20 - camera.position.x) * 0.01;
-            camera.position.y += (mouse2D.y * 20 - camera.position.y) * 0.01;
-            camera.lookAt(0, 0, 0);
+            controls.update(); // Use OrbitControls for stability
 
             composer.render();
         }
